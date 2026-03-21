@@ -2,10 +2,7 @@ package tn.esprit.ms_gestionuser.controllers;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import tn.esprit.ms_gestionuser.dto.LoginRequest;
 import tn.esprit.ms_gestionuser.entities.User;
 import tn.esprit.ms_gestionuser.services.AuthService;
@@ -34,5 +31,8 @@ public class AuthController {
             return ResponseEntity.status(401).body(e.getMessage());
         }
     }
+
+    @GetMapping("/test-auth")
+    public String test() { return "Bravo ! Vous êtes authentifié avec votre Token !"; }
 
 }
