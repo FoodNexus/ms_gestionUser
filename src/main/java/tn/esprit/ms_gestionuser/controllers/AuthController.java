@@ -11,6 +11,7 @@ import tn.esprit.ms_gestionuser.services.AuthService;
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
+
     private final AuthService authService;
 
     @PostMapping("/register")
