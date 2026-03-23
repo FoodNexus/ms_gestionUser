@@ -32,6 +32,4 @@ public class User {
     RoleType role;
 
     boolean isActif = true;
-
-
 }
