@@ -1,10 +1,10 @@
 package tn.esprit.ms_gestionuser.entities;
+
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
-
 @Entity
 @Getter
 @Setter
@@ -16,6 +16,10 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long idUser;
 
+    // NOUVEAU : C'est le lien avec le compte Keycloak (l'UUID)
+    @Column(unique = true, nullable = false)
+    String keycloakId;
+
     String nom;
 
     String prenom;
@@ -23,8 +27,7 @@ public class User {
     @Column(unique = true, nullable = false)
     String email;
 
-    @Column(nullable = false)
-    String password;
+    // L'attribut password a été supprimé ici !
 
     String telephone;
 
