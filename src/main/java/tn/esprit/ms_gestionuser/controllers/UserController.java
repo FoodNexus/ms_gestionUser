@@ -1,91 +1,74 @@
 package tn.esprit.ms_gestionuser.controllers;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tn.esprit.ms_gestionuser.entities.User;
-import tn.esprit.ms_gestionuser.repositories.UserRepository;
+import tn.esprit.ms_gestionuser.services.UserService;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
+@RequiredArgsConstructor
 public class UserController {
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserService userService;
 
+    /**
+     * Récupère le profil de l'utilisateur connecté.
+     * Si c'est la première connexion, l'utilisateur est automatiquement créé en base.
+     */
     @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser() {
-        // 1. Récupérer le contexte de sécurité (rempli automatiquement par votre JwtFilter)
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // 2. Récupérer l'email de l'utilisateur connecté (le "subject" du token)
-        String userEmail = authentication.getName();
-
-        // 3. Chercher l'utilisateur dans la base de données
-        User currentUser = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé dans la base de données"));
-
-        // 4. Petite astuce de sécurité : on efface le mot de passe de l'objet avant de l'envoyer au client !
-        currentUser.setPassword(null);
-
-        // 5. Renvoyer les informations de l'utilisateur (Code 200 OK)
-        return ResponseEntity.ok(currentUser);
+    public ResponseEntity<User> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
+        User user = userService.getOrCreateUser(jwt);
+        return ResponseEntity.ok(user);
     }
 
+    /**
+     * Met à jour le profil de l'utilisateur connecté (champs métier uniquement).
+     */
+    @PutMapping("/me/update")
+    public ResponseEntity<User> updateMyProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody User updatedUser) {
+        User user = userService.updateUserProfile(jwt.getSubject(), updatedUser);
+        return ResponseEntity.ok(user);
+    }
+
+    /**
+     * Récupère tous les utilisateurs (réservé à l'ADMIN).
+     */
     @GetMapping("/all")
-    @PreAuthorize("hasAuthority('ADMIN')") // Seuls les ADMIN peuvent entrer ici !
-    public ResponseEntity<?> getAllUsers() {
-
-        // On récupère tous les utilisateurs
-        List<User> users = userRepository.findAll();
-
-        // On masque les mots de passe avant de les envoyer
-        users.forEach(user -> user.setPassword(null));
-
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<User>> getAllUsers() {
+        List<User> users = userService.getAllUsers();
         return ResponseEntity.ok(users);
     }
 
-    // ----------------------------------------------------
-    // 1. SUPPRIMER UN UTILISATEUR (RÉSERVÉ À L'ADMIN)
-    // ----------------------------------------------------
+    /**
+     * Supprime un utilisateur par son ID (réservé à l'ADMIN).
+     */
     @DeleteMapping("/delete/{id}")
-    @PreAuthorize("hasAuthority('ADMIN') or hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
-        if (!userRepository.existsById(id)) {
-            return ResponseEntity.badRequest().body("Erreur : Utilisateur introuvable !");
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> deleteUser(@PathVariable Long id) {
+        try {
+            userService.deleteUser(id);
+            return ResponseEntity.ok("Utilisateur avec l'ID " + id + " a été supprimé avec succès !");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-        userRepository.deleteById(id);
-        return ResponseEntity.ok("Utilisateur avec l'ID " + id + " a été supprimé avec succès !");
     }
 
-    // ----------------------------------------------------
-    // 2. METTRE À JOUR SON PROPRE PROFIL (POUR TOUT LE MONDE)
-    // ----------------------------------------------------
-    @PutMapping("/me/update")
-    public ResponseEntity<?> updateMyProfile(@RequestBody User updatedUser) {
-        // On récupère l'utilisateur connecté via son Token
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String userEmail = authentication.getName();
-
-        User currentUser = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
-
-        // On met à jour uniquement les champs envoyés (on ne touche pas au mot de passe ou au rôle ici pour des raisons de sécurité)
-        if (updatedUser.getNom() != null) currentUser.setNom(updatedUser.getNom());
-        if (updatedUser.getPrenom() != null) currentUser.setPrenom(updatedUser.getPrenom());
-        if (updatedUser.getTelephone() != null) currentUser.setTelephone(updatedUser.getTelephone());
-
-        // On sauvegarde dans la base de données
-        userRepository.save(currentUser);
-
-        // On cache le mot de passe avant d'afficher la réponse
-        currentUser.setPassword(null);
-
-        return ResponseEntity.ok(currentUser);
+    /**
+     * Endpoint de test pour vérifier que l'authentification fonctionne.
+     */
+    @GetMapping("/test-auth")
+    public ResponseEntity<String> testAuth(@AuthenticationPrincipal Jwt jwt) {
+        String message = "Bravo ! Vous êtes authentifié via Keycloak ! "
+                + "Email: " + jwt.getClaimAsString("email")
+                + ", Subject: " + jwt.getSubject();
+        return ResponseEntity.ok(message);
     }
 }

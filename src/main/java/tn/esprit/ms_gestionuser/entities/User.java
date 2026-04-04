@@ -1,10 +1,12 @@
 package tn.esprit.ms_gestionuser.entities;
+
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
-@FieldDefaults(level = AccessLevel.PRIVATE)
+import java.time.LocalDateTime;
 
+@FieldDefaults(level = AccessLevel.PRIVATE)
 @Entity
 @Getter
 @Setter
@@ -16,6 +18,11 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long idUser;
 
+    // === Lien Keycloak ===
+    @Column(unique = true)
+    String keycloakId;
+
+    // === Champs communs ===
     String nom;
 
     String prenom;
@@ -23,13 +30,36 @@ public class User {
     @Column(unique = true, nullable = false)
     String email;
 
-    @Column(nullable = false)
-    String password;
-
     String telephone;
 
     @Enumerated(EnumType.STRING)
     RoleType role;
 
+    LocalDateTime createdAt;
+
     boolean isActif = true;
+
+    // === Champs spécifiques DONOR ===
+    String donorCompanyName;
+    String taxIdNumber;
+    String address;
+
+    // === Champs spécifiques RECEIVER (Association) ===
+    String associationName;
+    Double reputationScore;
+    String documentUrl;
+
+    // === Champs spécifiques TRANSPORTER ===
+    String transporterCompanyName;
+    String vehicleType;
+    Double capacity;
+
+    // === Champs spécifiques AUDITOR ===
+    String certificationNumber;
+    String agencyName;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
 }
