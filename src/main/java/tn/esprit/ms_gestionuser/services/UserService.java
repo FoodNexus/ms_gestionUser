@@ -1,6 +1,10 @@
 package tn.esprit.ms_gestionuser.services;
 
 import lombok.RequiredArgsConstructor;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import tn.esprit.ms_gestionuser.entities.RoleType;
@@ -15,6 +19,11 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final Keycloak keycloak;
+
+    @Value("${keycloak.admin.realm}")
+    private String realm;
+
 
     /**
      * Récupère ou crée automatiquement un utilisateur à partir du token Keycloak.
@@ -66,6 +75,7 @@ public class UserService {
         if (updatedUser.getNom() != null) currentUser.setNom(updatedUser.getNom());
         if (updatedUser.getPrenom() != null) currentUser.setPrenom(updatedUser.getPrenom());
         if (updatedUser.getTelephone() != null) currentUser.setTelephone(updatedUser.getTelephone());
+        if (updatedUser.getRole() != null) currentUser.setRole(updatedUser.getRole());
 
         // Champs DONOR
         if (updatedUser.getDonorCompanyName() != null) currentUser.setDonorCompanyName(updatedUser.getDonorCompanyName());
@@ -86,7 +96,9 @@ public class UserService {
         if (updatedUser.getCertificationNumber() != null) currentUser.setCertificationNumber(updatedUser.getCertificationNumber());
         if (updatedUser.getAgencyName() != null) currentUser.setAgencyName(updatedUser.getAgencyName());
 
-        return userRepository.save(currentUser);
+        currentUser = userRepository.save(currentUser);
+        syncUserToKeycloak(currentUser);
+        return currentUser;
     }
 
     /**
@@ -98,6 +110,53 @@ public class UserService {
         }
         userRepository.deleteById(id);
     }
+
+    /**
+     * Met à jour le profil complet d'un utilisateur par son ID de base de données (sans Keycloak).
+     */
+    public User updateUserById(Long id, User updatedUser) {
+        User currentUser = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé avec l'ID : " + id));
+
+        if (updatedUser.getNom() != null) currentUser.setNom(updatedUser.getNom());
+        if (updatedUser.getPrenom() != null) currentUser.setPrenom(updatedUser.getPrenom());
+        if (updatedUser.getTelephone() != null) currentUser.setTelephone(updatedUser.getTelephone());
+        if (updatedUser.getAddress() != null) currentUser.setAddress(updatedUser.getAddress());
+        if (updatedUser.getRole() != null) currentUser.setRole(updatedUser.getRole());
+
+        // Champs DONOR
+        if (updatedUser.getDonorCompanyName() != null) currentUser.setDonorCompanyName(updatedUser.getDonorCompanyName());
+        if (updatedUser.getTaxIdNumber() != null) currentUser.setTaxIdNumber(updatedUser.getTaxIdNumber());
+
+        // Champs RECEIVER
+        if (updatedUser.getAssociationName() != null) currentUser.setAssociationName(updatedUser.getAssociationName());
+        if (updatedUser.getReputationScore() != null) currentUser.setReputationScore(updatedUser.getReputationScore());
+        if (updatedUser.getDocumentUrl() != null) currentUser.setDocumentUrl(updatedUser.getDocumentUrl());
+
+        // Champs TRANSPORTER
+        if (updatedUser.getTransporterCompanyName() != null) currentUser.setTransporterCompanyName(updatedUser.getTransporterCompanyName());
+        if (updatedUser.getVehicleType() != null) currentUser.setVehicleType(updatedUser.getVehicleType());
+        if (updatedUser.getCapacity() != null) currentUser.setCapacity(updatedUser.getCapacity());
+
+        // Champs AUDITOR
+        if (updatedUser.getCertificationNumber() != null) currentUser.setCertificationNumber(updatedUser.getCertificationNumber());
+        if (updatedUser.getAgencyName() != null) currentUser.setAgencyName(updatedUser.getAgencyName());
+
+        currentUser = userRepository.save(currentUser);
+        syncUserToKeycloak(currentUser);
+        return currentUser;
+    }
+
+    /**
+     * Bloque ou débloque un utilisateur (change isActif).
+     */
+    public void toggleUserStatus(Long id, boolean active) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé avec l'ID : " + id));
+        user.setActif(active);
+        userRepository.save(user);
+    }
+
 
     /**
      * Extrait le rôle principal depuis les claims Keycloak (realm_access.roles).
@@ -121,6 +180,46 @@ public class UserService {
         } catch (Exception ignored) {
         }
         // Rôle par défaut si aucun rôle métier trouvé
-        return RoleType.DONOR;
+        return RoleType.PENDING;
+    }
+
+    /**
+     * Change le mot de passe de l'utilisateur dans Keycloak.
+     */
+    public void changePassword(Long id, String newPassword) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé avec l'ID : " + id));
+
+        System.out.println("Attempting password change for: " + user.getEmail() + " (KID: " + user.getKeycloakId() + ")");
+
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(newPassword);
+        credential.setTemporary(false);
+
+        try {
+            keycloak.realm(realm).users().get(user.getKeycloakId()).resetPassword(credential);
+            System.out.println("✅ Mot de passe Keycloak mis à jour pour : " + user.getEmail());
+        } catch (Exception e) {
+            System.err.println("❌ ÉCHEC changement mot de passe Keycloak : " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Keycloak Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Synchronise les informations de base (Nom/Prénom) vers Keycloak.
+     */
+    private void syncUserToKeycloak(User user) {
+        try {
+            UserRepresentation userRep = keycloak.realm(realm).users().get(user.getKeycloakId()).toRepresentation();
+            userRep.setFirstName(user.getPrenom());
+            userRep.setLastName(user.getNom());
+            keycloak.realm(realm).users().get(user.getKeycloakId()).update(userRep);
+            System.out.println("✅ Synchronisation Keycloak réussie pour : " + user.getEmail());
+        } catch (Exception e) {
+            System.err.println("❌ ÉCHEC de synchronisation Keycloak pour " + user.getEmail() + " : " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

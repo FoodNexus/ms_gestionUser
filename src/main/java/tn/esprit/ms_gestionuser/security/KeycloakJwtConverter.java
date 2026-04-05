@@ -1,13 +1,16 @@
 package tn.esprit.ms_gestionuser.security;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.stereotype.Component;
+import tn.esprit.ms_gestionuser.repositories.UserRepository;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -19,12 +22,25 @@ import java.util.stream.Stream;
  * Ce convertisseur les transforme en GrantedAuthority pour Spring Security.
  */
 @Component
+@RequiredArgsConstructor
 public class KeycloakJwtConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    private final UserRepository userRepository;
     private final JwtGrantedAuthoritiesConverter defaultConverter = new JwtGrantedAuthoritiesConverter();
 
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
+        // --- VÉRIFICATION DU STATUT DU COMPTE (isActif) ---
+        // On récupère le sub (ID Keycloak) du token
+        String keycloakId = jwt.getSubject();
+        
+        // On vérifie dans la base si l'utilisateur est bloqué
+        userRepository.findByKeycloakId(keycloakId).ifPresent(user -> {
+            if (!user.isActif()) {
+                throw new DisabledException("Votre compte est bloqué par l'administrateur.");
+            }
+        });
+
         Collection<GrantedAuthority> authorities = Stream.concat(
                 defaultConverter.convert(jwt).stream(),
                 extractKeycloakRoles(jwt).stream()

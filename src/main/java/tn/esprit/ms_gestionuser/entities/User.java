@@ -18,6 +18,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long idUser;
 
+
     // === Lien Keycloak ===
     @Column(unique = true)
     String keycloakId;

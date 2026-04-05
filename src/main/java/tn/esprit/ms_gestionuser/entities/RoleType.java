@@ -6,5 +6,6 @@ public enum RoleType {
     RECEIVER,
     TRANSPORTER,
     AUDITOR,
-    RECYCLER
+    RECYCLER,
+    PENDING
 }
